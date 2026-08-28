@@ -1,0 +1,28 @@
+[workspace]
+resolver = "2"
+members = ["ebpf-agent", "ebpf-agent-common", "ebpf-agent-ebpf"]
+default-members = ["ebpf-agent", "ebpf-agent-common"]
+
+[workspace.dependencies]
+aya = { version = "0.14" }
+aya-build = { version = "0.2" }
+anyhow = { version = "1" }
+env_logger = { version = "0.11" }
+libc = { version = "0.2" }
+log = { version = "0.4" }
+tokio = { version = "1", default-features = false }
+aya-ebpf = { version = "0.2" }
+
+[profile.dev]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = "abort"
+codegen-units = 1
+
+[profile.release]
+lto = true
+panic = "abort"
+codegen-units = 1

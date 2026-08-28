@@ -1,0 +1,17 @@
+[package]
+name = "ebpf-agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+aya = { workspace = true }
+env_logger = { workspace = true }
+libc = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt", "signal"] }
+
+[build-dependencies]
+anyhow = { workspace = true }
+aya-build = { workspace = true }
+ebpf-agent-ebpf = { path = "../ebpf-agent-ebpf" }
