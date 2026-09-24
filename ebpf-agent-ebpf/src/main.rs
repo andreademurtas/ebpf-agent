@@ -10,9 +10,12 @@ use aya_ebpf::{
     maps::RingBuf,
     programs::TracePointContext,
 };
-use ebpf_agent_common::ExecEvent;
+use ebpf_agent_common::{ExecEvent, ExitEvent, ForkEvent, EVENT_EXEC, EVENT_EXIT, EVENT_FORK};
 
 const FILENAME_OFFSET: usize = 16;
+const NEWTASK_PID_OFFSET: usize = 8;
+const NEWTASK_CLONE_FLAGS_OFFSET: usize = 32;
+const CLONE_THREAD: u64 = 0x10000;
 
 #[map]
 static EVENTS: RingBuf = RingBuf::with_byte_size(256 * 1024, 0);
@@ -44,6 +47,7 @@ fn try_handle_execve(ctx: &TracePointContext) -> Result<(), i64> {
 }
 
 unsafe fn fill_event(ctx: &TracePointContext, event: *mut ExecEvent) -> Result<(), i64> {
+    (*event).kind = EVENT_EXEC;
     (*event).pid = (bpf_get_current_pid_tgid() >> 32) as u32;
     (*event).uid = bpf_get_current_uid_gid() as u32;
     (*event).comm = bpf_get_current_comm().unwrap_or_default();
@@ -51,6 +55,53 @@ unsafe fn fill_event(ctx: &TracePointContext, event: *mut ExecEvent) -> Result<(
     (*event).filename = [0u8; ebpf_agent_common::FILENAME_LEN];
     let filename_ptr: *const u8 = ctx.read_at(FILENAME_OFFSET)?;
     bpf_probe_read_user_str_bytes(filename_ptr, &mut (*event).filename)?;
+    Ok(())
+}
+
+#[tracepoint]
+pub fn handle_fork(ctx: TracePointContext) -> u32 {
+    match try_handle_fork(&ctx) {
+        Ok(()) => 0,
+        Err(_) => 1,
+    }
+}
+
+fn try_handle_fork(ctx: &TracePointContext) -> Result<(), i64> {
+    let clone_flags: u64 = unsafe { ctx.read_at(NEWTASK_CLONE_FLAGS_OFFSET)? };
+    if clone_flags & CLONE_THREAD != 0 {
+        return Ok(());
+    }
+
+    let pid: i32 = unsafe { ctx.read_at(NEWTASK_PID_OFFSET)? };
+    let event = ForkEvent {
+        kind: EVENT_FORK,
+        pid: pid as u32,
+        ppid: (bpf_get_current_pid_tgid() >> 32) as u32,
+    };
+    EVENTS.output::<ForkEvent>(&event, 0)?;
+    Ok(())
+}
+
+#[tracepoint]
+pub fn handle_exit(_ctx: TracePointContext) -> u32 {
+    match try_handle_exit() {
+        Ok(()) => 0,
+        Err(_) => 1,
+    }
+}
+
+fn try_handle_exit() -> Result<(), i64> {
+    let pid_tgid = bpf_get_current_pid_tgid();
+    let tgid = (pid_tgid >> 32) as u32;
+    if pid_tgid as u32 != tgid {
+        return Ok(());
+    }
+
+    let event = ExitEvent {
+        kind: EVENT_EXIT,
+        pid: tgid,
+    };
+    EVENTS.output::<ExitEvent>(&event, 0)?;
     Ok(())
 }
 
